@@ -1,3 +1,4 @@
+import java.io.*;
 import java.util.*;
 
 public class BookMyStayApp {
@@ -10,11 +11,10 @@ public class BookMyStayApp {
 
     static class RoomInventory {
         private Map<String, Integer> rooms = new HashMap<>();
+        private final String FILE = "inventory.txt";
 
         RoomInventory() {
-            rooms.put("Single", 2);
-            rooms.put("Double", 2);
-            rooms.put("Suite", 1);
+            loadInventory();
         }
 
         synchronized boolean isAvailable(String type) {
@@ -30,9 +30,37 @@ public class BookMyStayApp {
         }
 
         void showInventory() {
-            System.out.println("\nRemaining Inventory:");
-            for (String key : rooms.keySet()) {
-                System.out.println(key + ": " + rooms.get(key));
+            System.out.println("\nCurrent Inventory:");
+            for (String k : rooms.keySet()) {
+                System.out.println(k + ": " + rooms.get(k));
+            }
+        }
+
+        void loadInventory() {
+            try (BufferedReader br = new BufferedReader(new FileReader(FILE))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    String[] parts = line.split(",");
+                    rooms.put(parts[0], Integer.parseInt(parts[1]));
+                }
+                System.out.println("Inventory loaded from file.");
+            } catch (Exception e) {
+                System.out.println("No existing inventory data found. Starting fresh.");
+                rooms.put("Single", 5);
+                rooms.put("Double", 3);
+                rooms.put("Suite", 2);
+            }
+        }
+
+        void saveInventory() {
+            try (BufferedWriter bw = new BufferedWriter(new FileWriter(FILE))) {
+                for (String k : rooms.keySet()) {
+                    bw.write(k + "," + rooms.get(k));
+                    bw.newLine();
+                }
+                System.out.println("Inventory saved successfully.");
+            } catch (IOException e) {
+                System.out.println("Error saving inventory.");
             }
         }
     }
@@ -50,8 +78,7 @@ public class BookMyStayApp {
     }
 
     static class Booking {
-        String guest;
-        String type;
+        String guest, type;
 
         Booking(String g, String t) {
             guest = g;
@@ -83,19 +110,16 @@ public class BookMyStayApp {
                 validator.validate(name, type, inventory);
 
                 synchronized (inventory) {
-                    if (!inventory.isAvailable(type)) {
+                    if (!inventory.isAvailable(type))
                         throw new InvalidBookingException("Room not available");
-                    }
                     inventory.bookRoom(type);
                 }
 
-                Booking b = new Booking(name, type);
-                history.add(b);
-
-                System.out.println("Booking confirmed for " + name + " | Room: " + type);
+                history.add(new Booking(name, type));
+                System.out.println("Booking confirmed: " + name + " -> " + type);
 
             } catch (InvalidBookingException e) {
-                System.out.println("Booking failed for " + name + ": " + e.getMessage());
+                System.out.println("Booking failed: " + e.getMessage());
             }
         }
     }
@@ -112,30 +136,24 @@ public class BookMyStayApp {
     }
 
     static class ConcurrentBookingProcessor implements Runnable {
-
         private BookingService service;
         private String[] names = {"Amit", "Neha", "Raj", "Simran"};
         private String[] types = {"Single", "Double", "Suite"};
 
-        ConcurrentBookingProcessor(BookingService service) {
-            this.service = service;
+        ConcurrentBookingProcessor(BookingService s) {
+            service = s;
         }
 
-        @Override
         public void run() {
-            Random rand = new Random();
-
+            Random r = new Random();
             for (int i = 0; i < 5; i++) {
-                String name = names[rand.nextInt(names.length)];
-                String type = types[rand.nextInt(types.length)];
-
-                service.createBooking(name, type);
-
+                service.createBooking(
+                        names[r.nextInt(names.length)],
+                        types[r.nextInt(types.length)]
+                );
                 try {
                     Thread.sleep(200);
-                } catch (InterruptedException e) {
-                    System.out.println("Thread interrupted");
-                }
+                } catch (InterruptedException e) {}
             }
         }
     }
@@ -147,7 +165,7 @@ public class BookMyStayApp {
         ReservationValidator validator = new ReservationValidator();
         BookingService service = new BookingService(history, inventory, validator);
 
-        System.out.println("Concurrent Booking Simulation\n");
+        System.out.println("\n=== Concurrent Booking Simulation ===\n");
 
         Thread t1 = new Thread(new ConcurrentBookingProcessor(service));
         Thread t2 = new Thread(new ConcurrentBookingProcessor(service));
@@ -159,9 +177,11 @@ public class BookMyStayApp {
             t1.join();
             t2.join();
         } catch (InterruptedException e) {
-            System.out.println("Thread execution interrupted");
+            System.out.println("Thread error");
         }
 
         inventory.showInventory();
+
+        inventory.saveInventory();
     }
 }
